@@ -1,29 +1,54 @@
+/**
+  ******************************************************************************
+  * @file    robotlimpiafondos.ino
+  * @author  Turman Dreams
+  * @brief   El firmware del robot limpiafondos
+  ******************************************************************************
+  * Empiezo a dar una descripción más detallada sin entrar en algoritmos
+  * @attention
+  * Es importante que sepas qué significa el anillo de leds NeoPixel
+  *
+  * Crea un servidor web con el que te comunicas con el dispotivo para realizar "acciones"
+  * Se necesita un micro tope tocho tope fundente para poder darle matraca al código y que funcione
+  ******************************************************************************
+  */
+
 #include <WiFi.h>
 #include <Wire.h>
 #include <Adafruit_NeoPixel.h>
 
-#define pin_leds        19 // On Trinket or Gemma, suggest changing this to 1
-#define numpixels 5 // Popular NeoPixel ring size
+#define pin_leds  19 // On Trinket or Gemma, suggest changing this to 1
+#define numpixels  5 // Popular NeoPixel ring size
+
+// TODO: explicar qué estás construyendo en este RAII
 Adafruit_NeoPixel pixels(numpixels, pin_leds, NEO_GRB + NEO_KHZ800);
 
 #define MPU 0x68
 
-int16_t ax=0;
-int16_t ay=0;
-int16_t az=0;
-int16_t gx=0;
-int16_t gy=0;
-int16_t gz=0;
-int16_t temp=0;
+// TODO: Falta documentar, magic numbers, magic variables
+int16_t ax = 0;
+int16_t ay = 0;
+int16_t az = 0;
+int16_t gx = 0;
+int16_t gy = 0;
+int16_t gz = 0;
 
-int16_t dt=0;
-int16_t tiempo_prev=0;
+// Este es el valor de la temperatura (del agua, imagino) para poder saber de qué manera tenemos que proceder (imagino) con los motores del robot (imagino, again!)
+int16_t temp = 0;
+
+// Esta es la diferencia de tiempos. Es utilizada para el cálculo de X cosa que aún no tengo muy claro, pero que iré escudriñando conforme lea más abajo
+int16_t dt = 0;
+
+// Asumo, creo, espero, deseo que esto sea el tiempo previo utilizado para el cálculo de la diferencia de tiempos.
+int16_t tiempo_prev = 0;
 
 
-float girosc_ang_x, girosc_ang_y;
-float girosc_ang_x_prev, girosc_ang_y_prev;
+float girosc_ang_x; /*!< TODO: Me faltas tú para documentarte */
+float girosc_ang_y; /*!< TODO: Me faltas tú para documentarte */
+float girosc_ang_x_prev; /*!< TODO: Me faltas tú para documentarte */
+float girosc_ang_y_prev; /*!< TODO: Me faltas tú para documentarte */
 
-
+// :TODO: MOVER este montón de defines
 #define pin_enable_xye 2
 
 
@@ -32,80 +57,91 @@ float girosc_ang_x_prev, girosc_ang_y_prev;
 #define pin_y_dire 4
 #define pin_y_step 16
 
+// TODO: Sería estupendosio y maravillosio decir por qué nos interesa (si usas wifi, está claro), pero no lo sabe quien ha leído hasta aquí sin haber tocado en su vida, jaja saludos, la librería wifi.h
 const char* ssid = "robotlimpiafondos";
 const char* password = "robotlimpiafondos";
 
-
+// ¿Creando un servidor web? ¿POR QUÉ? ¿Y por qué en el 80?
+// Se va a crear un servidor que http, por eso se usa el puerto 80
 WiFiServer server(80);
 WiFiClient client;
 
 
+// Es una posición xD De una patata, de un pimiento, de un robot limpiapiscinas, de turman jugando con el codiguito... Posición xD
+int posicion = 0;
 
-int posicion=0;
+// Igual que la posición, el ángulo del tomate, del pimiento, de turman, de... xD
+int angulo = 0;
 
-int angulo=0;
+// TODO RISKY: No usar variables con una única letra
+int i = 0;
 
-int i=0;
+// El ruido del giroscopio en el eje Z
+int gzruido = 0;
 
-int gzruido=0;
+// TODO RISKY: No usar variables con una única letra
+String s = "";
 
-String s="";
+// TODO: cambiar el nombre para dónde se mueve el motor -> sugerencia: direccion_movimiento_motores
+int estadomotores = 0;
 
-int estadomotores=0;
+// El ciclista está jugando con los motores en la piscina haciendo chop chop. No sé qué hace esto, jaja saludos.
+int contadormotores = 0;
 
-int contadormotores=0;
+// Una rutina para ponerte fuerte, seas chico o chica. (P90x, P90y? ? ? ? ? ? ? ? ? ? ? ? ? )
+int px = 0;
+int py = 0;
 
-int px=0;
-int py=0;
+// Llega mi intelecto a descubrir que hay 4 sensores. Parece que se pueden utilizar... de algún modo
+int sensor_delantero = 0;
+int sensor_trasero = 0;
+int sensor_izquierdo = 0;
+int sensor_derecho = 0;
 
-int sensor_delantero=0;
-int sensor_trasero=0;
-int sensor_izquierdo=0;
-int sensor_derecho=0;
 
+// TODO LISTO: No tan listo!
+// Quitar espacios al final de la línea
+// Quitar código comentado
 void cerrarcliente(){
   client.flush();
   client.stop();   
 //  client.stopAll();     
 }
 
-void cerrarconexiones(){
-  bool cliente=true;
+void cerrarconexiones() {
+  bool cliente = true;
 
-  while(cliente) {    
-      delay(100);  
-      client=server.available();
-      cliente=false;
-      
-      if(client){
-        if(client.connected()){
-          if(client.available()){ 
-              cliente=true;             
-              cerrarcliente();             
-          } 
-        }
+  while ( cliente ) {
+    delay( 100 );
+    client = server.available();
+    cliente = false;
+
+    if ( client ) {
+      if ( client.connected() ) {
+        if ( client.available() ) { 
+            cliente = true;
+            cerrarcliente();
+        } 
       }
-  } 
-  
+    }
+  }
 }
 
 void enviavalores() {
-
-    s="";
-    s+=ax;s+=";";
-    s+=ay;s+=";";
-    s+=az;s+=";";
-    s+=temp;s+=";";
-    s+=angulo;s+=";";
-    s+=px;s+=";";
-    s+=py;s+=";";
-    s+=sensor_delantero;s+=";";
-    s+=sensor_derecho;s+=";";
-    s+=sensor_trasero;s+=";";
-    s+=sensor_izquierdo;s+=";";
+    s = "";
+    s += ax;                   s+=";";
+    s += ay;                   s+=";";
+    s += az;                   s+=";";
+    s += temp;                 s+=";";
+    s += angulo;               s+=";";
+    s += px;                   s+=";";
+    s += py;                   s+=";";
+    s += sensor_delantero;     s+=";";
+    s += sensor_derecho;       s+=";";
+    s += sensor_trasero;       s+=";";
+    s += sensor_izquierdo;     s+=";";
 
     client.print(s);
-    
 }
 
 
@@ -194,38 +230,38 @@ void updateGiro()
 
 void leempu6050() {
 
-  Wire.beginTransmission(MPU);
-  Wire.write(0x3B); //Pedir el registro 0x3B - corresponde al AcX
-  Wire.endTransmission(false);
-  Wire.requestFrom(MPU,14,true); //A partir del 0x3B, se piden 6 registros
-  while(Wire.available() < 14);
+  Wire.beginTransmission( MPU );
+  Wire.write( 0x3B ); //Pedir el registro 0x3B - corresponde al AcX
+  Wire.endTransmission( false );
+  Wire.requestFrom( MPU, 14, true ); //A partir del 0x3B, se piden 6 registros
+  while ( Wire.available() < 14 );
   
-  ax=Wire.read()<<8|Wire.read(); //Cada valor ocupa 2 registros
-  ay=Wire.read()<<8|Wire.read();
-  az=Wire.read()<<8|Wire.read();
+  ax   = Wire.read() << 8 | Wire.read(); //Cada valor ocupa 2 registros
+  ay   = Wire.read() << 8 | Wire.read();
+  az   = Wire.read() << 8 | Wire.read();
   
-  temp=Wire.read()<<8|Wire.read();
+  temp = Wire.read() << 8 | Wire.read();
   
-  gx=Wire.read()<<8|Wire.read(); //Cada valor ocupa 2 registros
-  gy=Wire.read()<<8|Wire.read();
-  gz=Wire.read()<<8|Wire.read();
+  gx   = Wire.read() << 8 | Wire.read(); //Cada valor ocupa 2 registros
+  gy   = Wire.read() << 8 | Wire.read();
+  gz   = Wire.read() << 8 | Wire.read();
 
   //int gz2=gz-gzruido;
 
   //Serial.println(gz2);
 
-  String cadena="";
-  cadena+=ax;cadena+=";";
-  cadena+=ay;cadena+=";";
+  String cadena = "";
+  cadena += ax; cadena += ";";
+  cadena += ay; cadena += ";";
 
   //Serial.println(cadena);
 
-  int posicion2=0;
-  if(ay<-200) { posicion2=1; }
-  else if(ay>200) { posicion2=2; }
-  else if(ax<-200) { posicion2=3; }
-  else if(ax>200) { posicion2=4; }
-  else { posicion2=0; }
+  int posicion2 = 0;
+  if      ( ay < -200 ) { posicion2 = 1; }
+  else if ( ay >  200 ) { posicion2 = 2; }
+  else if ( ax < -200 ) { posicion2 = 3; }
+  else if ( ax >  200 ) { posicion2 = 4; }
+  else                  { posicion2 = 0; }
 /*
   if(posicion2!=posicion) {
     pixels.clear();
